@@ -22,4 +22,9 @@ WireGuard add-on, dashboard on haos-vibe's boilerplate tabs with shared `_shared
 
 ## Next
 - DONE: packages/wireguard.yaml, dashboard (templates rendered against live HA), README.
-- NEXT: esphome-config: device files read ports from secrets; BLE-2 on a branch from main, BLE-3 on feat/as5600-ble-3. Then Louis deploys + Run check.
+- DONE: esphome-config feat/wireguard-port-secrets (BLE-2 + README + CI) and
+  feat/as5600-ble-3 (BLE-3) read ports from secrets.
+- NEXT: Louis: secrets include line + move BLE-2/BLE-3 into auto file (5 keys each), deploy
+  haos-vibe feat/boilerplate (restart), deploy this branch (restart), Run check, then a real
+  provision. Unverified live: SUPERVISOR_TOKEN in shell_command's env, /ssl readable from core,
+  cross-repo !include of _shared/section_links.yaml.
