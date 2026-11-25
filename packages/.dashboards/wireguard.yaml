@@ -63,13 +63,16 @@ views:
           - type: tile
             entity: sensor.wireguard_sent
             name: Sent
+      # Full width on desktop: the table has nine columns.
       - type: grid
-        column_span: 3
+        column_span: 4
         cards:
           - type: heading
             heading: Peers
             icon: mdi:lan
           - type: markdown
+            grid_options:
+              columns: full
             content: |-
               {%- set peers = state_attr('sensor.wireguard_status', 'peers') or [] -%}
               {%- macro size(b) -%}
