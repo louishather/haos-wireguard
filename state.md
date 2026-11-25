@@ -21,4 +21,5 @@ WireGuard add-on, dashboard on haos-vibe's boilerplate tabs with shared `_shared
 - `.vibe/wireguard.py` status/check/provision, tested locally with a fake Supervisor.
 
 ## Next
-- packages/wireguard.yaml, dashboard, README, CI secrets; esphome-config ports from secrets.
+- DONE: packages/wireguard.yaml, dashboard (templates rendered against live HA), README.
+- NEXT: esphome-config: device files read ports from secrets; BLE-2 on a branch from main, BLE-3 on feat/as5600-ble-3. Then Louis deploys + Run check.
