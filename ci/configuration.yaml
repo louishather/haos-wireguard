@@ -1,0 +1,5 @@
+# Minimal config used only by CI to validate packages/.
+default_config:
+
+homeassistant:
+  packages: !include_dir_named packages

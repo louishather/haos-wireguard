@@ -1,0 +1,38 @@
+name: Validate
+
+# Cut down from louishather/haos-vibe's validate.yml (see CONVENTIONS "CI"). Kept lean for the
+# free Actions minutes: pushes only validate main, feature branches get CI via their PR,
+# doc-only changes don't run, a new push cancels the running check, "Run workflow" on demand.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install yamllint && yamllint packages ci
+
+  ha-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble a throwaway config dir
+        run: |
+          mkdir -p .ci-config
+          cp ci/configuration.yaml .ci-config/
+          cp -r packages .ci-config/packages
+      - uses: frenck/action-home-assistant@v1
+        with:
+          path: .ci-config
+          secrets: ci/secrets.yaml
+          version: stable
