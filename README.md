@@ -16,6 +16,7 @@ standard tabs: Overview (peers, handshakes, traffic), Settings (add an ESP32), H
 | `sensor.wireguard_peers_connected` | Peers with a handshake in the last 3 min |
 | `sensor.wireguard_received` / `_sent` | Bytes, all peers (reset when the add-on restarts) |
 | `script.wireguard_provision` | Provisions the device typed into `input_text.wireguard_new_device` / `_new_home_ip` |
+| `script.wireguard_adopt` | Copies ESP32s tunnelled by hand into the generated file; changes nothing in the add-on |
 | `script.wireguard_check` | Checks provisioning can work; changes nothing |
 
 ## Provisioning an ESP32
@@ -46,8 +47,12 @@ gets flashed, and is added to HA's ESPHome integration at `a0d7b954-wireguard` a
    ```yaml
    <<: !include auto-wireguard-secrets.yaml
    ```
-2. Move any ESP32 that's already tunnelled into `auto-wireguard-secrets.yaml` (create it) with
-   all five keys per device, and take them out of `secrets.yaml`.
+2. ESP32s that are already tunnelled: on the dashboard's Settings tab, press **Adopt existing
+   ESP32s**. For each tunnel address the add-on forwards to, it finds the device from the
+   `<slug>_wireguard_internal_address` key in `secrets.yaml` (or an `ESP32-...` peer name), takes
+   the ports from the forwards and the private key and home IP from `secrets.yaml` (or the add-on's
+   key file), and adds the five keys to `auto-wireguard-secrets.yaml`. Then delete those keys
+   from `secrets.yaml` (they'd win over the generated ones anyway). Or add the blocks by hand.
 3. Deploy haos-vibe (it registers the dashboard and ships the shared dashboard sections), then
    watch and deploy this repo from the GitHub dashboard's **Repos** card, with **Restart instead
    of reload** the first time (new command_line sensor and shell_commands).
