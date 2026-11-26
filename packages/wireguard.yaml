@@ -1,0 +1,153 @@
+# WireGuard: monitor HA's WireGuard add-on and provision ESP32 clients from the /wireguard-vibe dashboard.
+#
+# packages/.vibe/wireguard.py does the work (Supervisor API + files; see its docstring):
+#   sensor.wireguard_status         every minute: peers, handshakes, traffic (state: ok | partial | error)
+#   script.wireguard_provision      adds the device typed on the dashboard as a peer, rebuilds the
+#                                   add-on's port forwards, restarts it, and writes the device's
+#                                   secrets to /config/esphome/auto-wireguard-secrets.yaml
+#   script.wireguard_check          checks the script can do that, changes nothing
+# Dashboard: packages/.dashboards/wireguard.yaml, registered in haos-vibe as /wireguard-vibe.
+#
+# FIRST DEPLOY OF THIS FILE NEEDS "Restart instead of reload" (command_line sensor, shell_commands).
+
+command_line:
+  - sensor:
+      name: WireGuard status
+      unique_id: wireguard_status
+      icon: mdi:vpn
+      command: "/bin/sh /config/vibe/packages/haos_wireguard/.vibe/run.sh wireguard status"
+      command_timeout: 20
+      scan_interval: 60
+      value_template: "{{ value_json.state }}"
+      json_attributes:
+        - message
+        - errors
+        - addon_state
+        - peers
+        - peer_count
+        - connected
+        - rx_total
+        - tx_total
+        - managed
+        - secrets_included
+
+shell_command:
+  # Values are checked by script.wireguard_provision and again by the Python script.
+  wireguard_provision: >-
+    /bin/sh /config/vibe/packages/haos_wireguard/.vibe/run.sh wireguard provision {{ name }} {{ home_ip }}
+  wireguard_check: "/bin/sh /config/vibe/packages/haos_wireguard/.vibe/run.sh wireguard check"
+
+input_text:
+  wireguard_new_device:
+    name: WireGuard new device
+    icon: mdi:chip
+    max: 40
+  wireguard_new_home_ip:
+    name: WireGuard new device home IP
+    icon: mdi:ip-network
+    max: 15
+  wireguard_last_result:
+    name: WireGuard last provision
+    icon: mdi:clipboard-text-clock
+    max: 255
+  wireguard_last_check:
+    name: WireGuard last check
+    icon: mdi:clipboard-check
+    max: 255
+
+template:
+  - sensor:
+      - name: WireGuard peers connected
+        unique_id: wireguard_peers_connected
+        icon: mdi:lan-connect
+        unit_of_measurement: peers
+        state_class: measurement
+        state: "{{ state_attr('sensor.wireguard_status', 'connected') | int(0) }}"
+        availability: "{{ state_attr('sensor.wireguard_status', 'connected') is not none }}"
+        attributes:
+          peers: "{{ state_attr('sensor.wireguard_status', 'peer_count') | int(0) }}"
+      # Byte counters reset when the add-on restarts; total_increasing copes with that.
+      - name: WireGuard received
+        unique_id: wireguard_received
+        device_class: data_size
+        unit_of_measurement: B
+        state_class: total_increasing
+        state: "{{ state_attr('sensor.wireguard_status', 'rx_total') | int(0) }}"
+        availability: "{{ state_attr('sensor.wireguard_status', 'rx_total') is not none }}"
+      - name: WireGuard sent
+        unique_id: wireguard_sent
+        device_class: data_size
+        unit_of_measurement: B
+        state_class: total_increasing
+        state: "{{ state_attr('sensor.wireguard_status', 'tx_total') | int(0) }}"
+        availability: "{{ state_attr('sensor.wireguard_status', 'tx_total') is not none }}"
+
+script:
+  wireguard_provision:
+    alias: WireGuard provision client
+    description: >-
+      Adds the device named on the dashboard as a WireGuard peer and writes its secrets.
+      Restarts the add-on, so every tunnel drops for a few seconds.
+    icon: mdi:account-plus
+    mode: single
+    sequence:
+      - variables:
+          name: "{{ states('input_text.wireguard_new_device') | trim | upper }}"
+          home_ip: "{{ states('input_text.wireguard_new_home_ip') | trim }}"
+          valid: >-
+            {{ name is match('^ESP32-[A-Z0-9]+(-[A-Z0-9]+)*$')
+               and home_ip is match('^10\.250\.5\.[0-9]{1,3}$') }}
+      - if: "{{ not valid }}"
+        then:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.wireguard_last_result
+            data:
+              value: >-
+                {{ now().strftime('%d %b %H:%M') }} · ✗ Needs a name like ESP32-C3-BLE-4 and a
+                10.250.5.x home IP.
+          - stop: Invalid input
+      - action: shell_command.wireguard_provision
+        data:
+          name: "{{ name }}"
+          home_ip: "{{ home_ip }}"
+        response_variable: run
+      - variables:
+          res: >-
+            {%- set o = (run.stdout | default('')) | trim -%}
+            {{ o | from_json if o.startswith('{') else {'ok': false, 'message': 'no output (' ~ (run.stderr | default('') | trim)[:150] ~ ')'} }}
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.wireguard_last_result
+        data:
+          value: >-
+            {{ (now().strftime('%d %b %H:%M') ~ ' · ' ~ ('✓ ' if res.ok else '✗ ') ~ res.message)[:255] }}
+      - if: "{{ res.ok }}"
+        then:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.wireguard_new_home_ip
+            data:
+              value: ""
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.wireguard_status
+
+  wireguard_check:
+    alias: WireGuard check
+    description: Checks the provisioning script can reach the add-on and write the secrets file. Changes nothing.
+    icon: mdi:clipboard-check
+    mode: single
+    sequence:
+      - action: shell_command.wireguard_check
+        response_variable: run
+      - variables:
+          res: >-
+            {%- set o = (run.stdout | default('')) | trim -%}
+            {{ o | from_json if o.startswith('{') else {'ok': false, 'message': 'no output (' ~ (run.stderr | default('') | trim)[:150] ~ ')'} }}
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.wireguard_last_check
+        data:
+          value: >-
+            {{ (now().strftime('%d %b %H:%M') ~ ' · ' ~ ('✓ ' if res.ok else '✗ ') ~ res.message)[:255] }}

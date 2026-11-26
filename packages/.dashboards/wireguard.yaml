@@ -1,0 +1,263 @@
+# WireGuard — YAML-mode dashboard, registered in louishather/haos-vibe packages/dashboards.yaml
+# as /wireguard-vibe. Entities come from packages/wireguard.yaml.
+#
+# Built on haos-vibe's boilerplate standard tabs (docs/boilerplate.md there), each with a fixed
+# path: overview · settings · history · debug. Short sections first, long lists last.
+# Shared sections come from haos-vibe's packages/.dashboards/_shared/ via ../../repo/ (deployed
+# to /config/vibe/packages/repo/), so haos-vibe has to be deployed with them.
+
+title: WireGuard
+views:
+  # ---------------------------------------------------------------- Overview
+  - title: Overview
+    path: overview
+    icon: mdi:view-dashboard
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    header:
+      layout: responsive
+      badges_position: bottom
+      badges_wrap: scroll
+      card:
+        type: markdown
+        text_only: true
+        content: |-
+          {%- set s = 'sensor.wireguard_status' -%}
+          # WireGuard
+
+          {% if states(s) in ['unknown', 'unavailable'] -%}
+          Status not read yet.
+          {%- elif state_attr(s, 'addon_state') not in [none, 'started'] -%}
+          **Add-on {{ state_attr(s, 'addon_state') }}.**
+          {%- else -%}
+          **{{ state_attr(s, 'connected') }} of {{ state_attr(s, 'peer_count') }}** peers connected · {{ state_attr(s, 'managed') }} ESP32{{ '' if state_attr(s, 'managed') == 1 else 's' }} provisioned
+          {%- endif %}
+    badges:
+      # Only shown when something needs attention
+      - type: entity
+        entity: sensor.wireguard_status
+        name: Status
+        show_name: true
+        icon: mdi:alert
+        color: red
+        visibility:
+          - condition: state
+            entity: sensor.wireguard_status
+            state_not: ok
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Now
+            icon: mdi:eye
+          - type: tile
+            entity: sensor.wireguard_peers_connected
+            name: Connected
+          - type: tile
+            entity: sensor.wireguard_status
+            name: Status
+          - type: tile
+            entity: sensor.wireguard_received
+            name: Received
+          - type: tile
+            entity: sensor.wireguard_sent
+            name: Sent
+      - type: grid
+        column_span: 3
+        cards:
+          - type: heading
+            heading: Peers
+            icon: mdi:lan
+          - type: markdown
+            content: |-
+              {%- set peers = state_attr('sensor.wireguard_status', 'peers') or [] -%}
+              {%- macro size(b) -%}
+              {%- set b = b | int(0) -%}
+              {{ (b / 1073741824) | round(2) ~ ' GB' if b >= 1073741824 else (b / 1048576) | round(1) ~ ' MB' if b >= 1048576 else (b / 1024) | round ~ ' kB' if b >= 1024 else b ~ ' B' }}
+              {%- endmacro -%}
+              {%- macro ago(s) -%}
+              {%- if s is none -%}never{%- elif s < 120 -%}{{ s }} s ago{%- elif s < 7200 -%}{{ (s / 60) | int }} min ago{%- elif s < 172800 -%}{{ (s / 3600) | int }} h ago{%- else -%}{{ (s / 86400) | int }} d ago{%- endif -%}
+              {%- endmacro -%}
+              {%- if peers | count == 0 -%}
+              No peers reported.
+              {%- else -%}
+              | | Peer | Tunnel | Endpoint | Handshake | Received | Sent | Home IP | Ports |
+              |:--|:--|:--|:--|:--|--:|--:|:--|:--|
+              {%- for p in peers | sort(attribute='name') %}
+              | {{ '🟢' if p.connected else '⚪' }} | {{ p.name }} | {{ p.address or '—' }} | {{ p.endpoint or '—' }} | {{ ago(p.handshake_age) }} | {{ size(p.rx) }} | {{ size(p.tx) }} | {{ p.home_ip or '—' }} | {{ (p.api_port ~ ' / ' ~ p.ota_port) if p.api_port else '—' }} |
+              {%- endfor %}
+
+              <small>🟢 handshake in the last 3 min. Ports (API / OTA) are forwarded from a0d7b954-wireguard for provisioned ESP32s; other peers (phones) show —.</small>
+              {%- endif %}
+
+  # ---------------------------------------------------------------- Settings
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Add an ESP32
+            icon: mdi:account-plus
+          - type: markdown
+            text_only: true
+            content: >-
+              Adds the device as a peer, gives it the next tunnel address (from 172.27.66.10) and
+              port pair, and writes its secrets. **Restarts the add-on**: every tunnel drops for a
+              few seconds.
+          - type: entities
+            entities:
+              - entity: input_text.wireguard_new_device
+                name: Device (ESP32-C3-BLE-4)
+              - entity: input_text.wireguard_new_home_ip
+                name: Home IP (10.250.5.x)
+          - type: button
+            name: Provision
+            icon: mdi:account-plus
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.wireguard_provision
+              confirmation:
+                text: Add this device to WireGuard? The add-on restarts and every tunnel drops briefly.
+          - type: markdown
+            content: |-
+              **Last run:** {{ states('input_text.wireguard_last_result') or 'none yet' }}
+      - type: grid
+        cards:
+          - type: heading
+            heading: Then
+            icon: mdi:format-list-numbered
+          - type: markdown
+            content: |-
+              {%- set n = (states('input_text.wireguard_new_device') | trim | lower) or 'esp32-c3-ble-4' -%}
+              {%- set k = n | replace('-', '_') -%}
+              1. In esphome-config, give the device file these substitutions and include
+                 `common/wifi-hotspot-first.yaml` and `common/wireguard.yaml`:
+              ```yaml
+                wireguard_address: !secret {{ k }}_wireguard_internal_address
+                wireguard_private_key: !secret {{ k }}_wireguard_private_key
+                home_static_ip: !secret {{ k }}_home_static_ip
+                wireguard_api_port: !secret {{ k }}_wireguard_api_port
+                wireguard_ota_port: !secret {{ k }}_wireguard_ota_port
+              ```
+              2. Flash it (USB for a new board).
+              3. Add it in HA: ESPHome, host `a0d7b954-wireguard`, its API port.
+      - type: grid
+        cards:
+          - type: heading
+            heading: One-time setup
+            icon: mdi:wrench
+          - type: markdown
+            content: |-
+              {%- set inc = state_attr('sensor.wireguard_status', 'secrets_included') -%}
+              {{ '✓' if inc else '✗' }} `/config/esphome/secrets.yaml` {{ 'includes' if inc else 'needs this line to include' }} the generated secrets:
+              ```yaml
+              <<: !include auto-wireguard-secrets.yaml
+              ```
+
+  # ---------------------------------------------------------------- History
+  - title: History
+    path: history
+    icon: mdi:chart-line
+    type: sections
+    max_columns: 4
+    sections:
+      # Full width on every screen size; raw data, no smoothing.
+      - type: grid
+        column_span: 4
+        cards:
+          - type: heading
+            heading: Peers connected
+            icon: mdi:lan-connect
+          - type: history-graph
+            hours_to_show: 48
+            grid_options:
+              columns: full
+              rows: 4
+            entities:
+              - entity: sensor.wireguard_peers_connected
+                name: Connected
+      - type: grid
+        column_span: 4
+        cards:
+          - type: heading
+            heading: Traffic (all peers, resets when the add-on restarts)
+            icon: mdi:swap-vertical
+          - type: history-graph
+            hours_to_show: 48
+            grid_options:
+              columns: full
+              rows: 5
+            entities:
+              - entity: sensor.wireguard_received
+                name: Received
+              - entity: sensor.wireguard_sent
+                name: Sent
+
+  # ---------------------------------------------------------------- Debug
+  - title: Debug
+    path: debug
+    icon: mdi:bug
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Script
+            icon: mdi:script-text
+          - type: tile
+            entity: sensor.wireguard_status
+            name: Status sensor
+          - type: markdown
+            content: |-
+              {%- set s = 'sensor.wireguard_status' -%}
+              **Add-on:** {{ state_attr(s, 'addon_state') or 'unknown' }}
+
+              **Message:** {{ state_attr(s, 'message') or '—' }}
+              {%- for e in state_attr(s, 'errors') or [] %}
+              - {{ e }}
+              {%- endfor %}
+          - type: button
+            name: Run check
+            icon: mdi:clipboard-check
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.wireguard_check
+          - type: markdown
+            content: |-
+              **Last check:** {{ states('input_text.wireguard_last_check') or 'none yet' }}
+      - type: grid
+        cards:
+          - type: heading
+            heading: Entity health
+            icon: mdi:heart-pulse
+          - type: markdown
+            content: |-
+              {%- set ents = states | selectattr('entity_id', 'search', '\.wireguard_') | list -%}
+              {%- set bad = ents | selectattr('state', 'in', ['unavailable', 'unknown']) | list -%}
+              {% if bad %}**{{ bad | count }} of {{ ents | count }} not reporting:**
+              {% for s in bad %}
+              - {{ s.name }} (`{{ s.entity_id }}`): {{ s.state }}
+              {%- endfor %}
+              {% else %}All {{ ents | count }} entities reporting.{% endif %}
+      - type: grid
+        cards:
+          - type: heading
+            heading: This project
+            icon: mdi:link-variant
+          - type: markdown
+            content: |-
+              - [Provision script traces](/config/script/trace/script.wireguard_provision)
+              - [WireGuard add-on](/hassio/addon/a0d7b954_wireguard/info)
+              - [haos-wireguard on GitHub](https://github.com/louishather/haos-wireguard)
+      # Shared with every dashboard (haos-vibe packages/.dashboards/_shared/).
+      - !include ../../repo/.dashboards/_shared/section_links.yaml
