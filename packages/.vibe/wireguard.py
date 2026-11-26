@@ -145,6 +145,9 @@ def write_devices(devices):
         f"#   {INCLUDE_LINE}",
         "# Keys written in secrets.yaml itself win over these. The script rewrites this file on",
         "# every provision; it keeps every device block below, including ones added by hand.",
+        "",
+        "# Always present, so the file is a valid mapping for secrets.yaml's `<<:` even with no devices.",
+        'auto_wireguard_secrets: "generated"',
     ]
     for slug in sorted(devices):
         d = devices[slug]
@@ -217,8 +220,19 @@ def unmanaged_forwards(post_up, devices):
 
 # ------------------------------------------------------------------ actions
 
+def ensure_file():
+    """secrets.yaml's `<<: !include` fails every ESPHome build if the file is missing, so make
+    an empty one as soon as the sensor first runs."""
+    if not os.path.exists(AUTO_FILE) and os.path.isdir(ESPHOME_DIR):
+        write_devices({})
+
+
 def status():
     errors = []
+    try:
+        ensure_file()
+    except OSError as e:
+        errors.append(f"can't create {AUTO_FILE}: {e}")
     devices = read_devices()
     by_address = {d.get("address"): (slug, d) for slug, d in devices.items()}
     addon_state, peers_cfg = None, []
@@ -430,7 +444,7 @@ def adopt():
                          "api_port": str(api), "ota_port": str(ota)}
         adopted.append(f"{name_of(slug)} ({address}, ports {api}/{ota})")
 
-    if adopted:
+    if adopted or not os.path.exists(AUTO_FILE):
         try:
             write_devices(devices)
         except OSError as e:
