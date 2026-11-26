@@ -30,7 +30,7 @@ On the dashboard's Settings tab, type the device name (`ESP32-C3-BLE-4`) and a f
 3. rebuilds the add-on's `server.post_up` / `post_down`: its default rules plus a forward pair
    per ESP32, so HA and Builder reach each one at `a0d7b954-wireguard:<port>`,
 4. saves the options and restarts the add-on (every tunnel drops for a few seconds),
-5. writes the device's five secrets to `/config/esphome/auto-wireguard-secrets.yaml`:
+5. writes the device's five secrets to `/config/esphome/wireguard/secrets.yaml`:
    `<slug>_wireguard_private_key`, `_wireguard_internal_address`, `_home_static_ip`,
    `_wireguard_api_port`, `_wireguard_ota_port`.
 
@@ -41,17 +41,25 @@ drop a device's forwards. It never edits `secrets.yaml` and never touches other 
 Then the device file in esphome-config reads those secrets (the dashboard shows the snippet),
 gets flashed, and is added to HA's ESPHome integration at `a0d7b954-wireguard` and its API port.
 
+## Where the secrets go
+
+`/config/esphome/wireguard/secrets.yaml`, included from `/config/esphome/secrets.yaml`. It's in a
+subfolder because ESPHome Builder lists every top-level `.yaml` in `/config/esphome` as a device,
+and it's named `secrets.yaml` so ESPHome treats it as secrets when it bundles a remote build.
+(Until Nov 2026 it was `/config/esphome/auto-wireguard-secrets.yaml`; the status sensor copies
+that across once, and Run check says when `secrets.yaml` still includes the old name.)
+
 ## Install
 
 1. In `/config/esphome/secrets.yaml`, add:
    ```yaml
-   <<: !include auto-wireguard-secrets.yaml
+   <<: !include wireguard/secrets.yaml
    ```
 2. ESP32s that are already tunnelled: on the dashboard's Settings tab, press **Adopt existing
    ESP32s**. For each tunnel address the add-on forwards to, it finds the device from the
    `<slug>_wireguard_internal_address` key in `secrets.yaml` (or an `ESP32-...` peer name), takes
    the ports from the forwards and the private key and home IP from `secrets.yaml` (or the add-on's
-   key file), and adds the five keys to `auto-wireguard-secrets.yaml`. Then delete those keys
+   key file), and adds the five keys to `wireguard/secrets.yaml`. Then delete those keys
    from `secrets.yaml` (they'd win over the generated ones anyway). Or add the blocks by hand.
 3. Deploy haos-vibe (it registers the dashboard and ships the shared dashboard sections), then
    watch and deploy this repo from the GitHub dashboard's **Repos** card, with **Restart instead

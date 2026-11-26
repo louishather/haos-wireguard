@@ -19,7 +19,7 @@ reach HA through the tunnel (esphome-config `common/wireguard.yaml`).
   only, prints one JSON object and always exits 0. `packages/.vibe/run.sh` is a copy of
   haos-vibe's.
 - The script owns the add-on's `server.post_up` / `server.post_down` and the generated
-  `/config/esphome/auto-wireguard-secrets.yaml`. It never edits `secrets.yaml` itself, and
+  `/config/esphome/wireguard/secrets.yaml`. It never edits `secrets.yaml` itself, and
   never touches add-on peers it didn't create (phones etc.).
 - ESP32 peers are named after the device in upper case (`ESP32-C3-BLE-4`); secret keys,
   file names and YAML use the lower-case slug (`esp32_c3_ble_4_...`).

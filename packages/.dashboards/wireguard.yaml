@@ -161,7 +161,7 @@ views:
               {%- set inc = state_attr('sensor.wireguard_status', 'secrets_included') -%}
               {{ '✓' if inc else '✗' }} `/config/esphome/secrets.yaml` {{ 'includes' if inc else 'needs this line to include' }} the generated secrets:
               ```yaml
-              <<: !include auto-wireguard-secrets.yaml
+              <<: !include wireguard/secrets.yaml
               ```
 
               ESP32s tunnelled by hand before this existed (their keys in `secrets.yaml`,

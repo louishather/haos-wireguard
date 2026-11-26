@@ -11,8 +11,8 @@ Provisioning (NAME like ESP32-C3-BLE-4, HOME_IP a free 10.250.5.x address):
   3. rebuilds server.post_up / post_down: the add-on's default rules plus a DNAT pair per device,
      so HA and ESPHome Builder reach each device at a0d7b954-wireguard:<port>,
   4. saves the options, restarts the add-on, waits for the peer's private key,
-  5. rewrites /config/esphome/auto-wireguard-secrets.yaml (secrets.yaml includes it with
-     `<<: !include auto-wireguard-secrets.yaml`).
+  5. rewrites /config/esphome/wireguard/secrets.yaml (secrets.yaml includes it with
+     `<<: !include wireguard/secrets.yaml`).
 
 That generated file is the list of managed devices: blocks added to it by hand count too.
 
@@ -40,9 +40,12 @@ STATUS_URL = "http://a0d7b954-wireguard/"  # the add-on's own status API (port 8
 SUPERVISOR = "http://supervisor"
 SSL_DIR = "/ssl/wireguard"
 ESPHOME_DIR = "/config/esphome"
-AUTO_FILE = os.path.join(ESPHOME_DIR, "auto-wireguard-secrets.yaml")
+# In a subfolder, so ESPHome Builder doesn't list it as a device (it only lists top-level
+# .yaml), and named secrets.yaml, so ESPHome treats it as secrets in remote build bundles.
+AUTO_FILE = os.path.join(ESPHOME_DIR, "wireguard", "secrets.yaml")
+OLD_AUTO_FILE = os.path.join(ESPHOME_DIR, "auto-wireguard-secrets.yaml")  # before Nov 2026
 SECRETS_FILE = os.path.join(ESPHOME_DIR, "secrets.yaml")
-INCLUDE_LINE = "<<: !include auto-wireguard-secrets.yaml"
+INCLUDE_LINE = "<<: !include wireguard/secrets.yaml"
 
 TUNNEL_FIRST = ipaddress.ip_address("172.27.66.10")
 TUNNEL_NET = ipaddress.ip_network("172.27.66.0/24")
@@ -124,11 +127,11 @@ def name_of(slug):
     return slug.upper().replace("_", "-")
 
 
-def read_devices():
+def read_devices(path=None):
     """{slug: {private_key, address, home_ip, api_port, ota_port}} from the generated file."""
     devices = {}
     try:
-        with open(AUTO_FILE) as f:
+        with open(path or AUTO_FILE) as f:
             for line in f:
                 m = KEY_RE.match(line.strip())
                 if m:
@@ -155,11 +158,20 @@ def write_devices(devices):
         for suffix, field in FIELDS.items():
             if d.get(field):
                 lines.append(f'{slug}_{suffix}: "{d[field]}"')
+    os.makedirs(os.path.dirname(AUTO_FILE), exist_ok=True)
     tmp = AUTO_FILE + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(lines) + "\n")
     os.chmod(tmp, 0o600)
     os.replace(tmp, AUTO_FILE)
+
+
+def old_include_present():
+    try:
+        with open(SECRETS_FILE) as f:
+            return any("auto-wireguard-secrets.yaml" in l.split("#")[0] for l in f)
+    except OSError:
+        return False
 
 
 def secrets_includes_file():
@@ -222,9 +234,14 @@ def unmanaged_forwards(post_up, devices):
 
 def ensure_file():
     """secrets.yaml's `<<: !include` fails every ESPHome build if the file is missing, so make
-    an empty one as soon as the sensor first runs."""
-    if not os.path.exists(AUTO_FILE) and os.path.isdir(ESPHOME_DIR):
-        write_devices({})
+    an empty one as soon as the sensor first runs. Moves the pre-Nov-2026 file across first
+    (keeping it, so a secrets.yaml still including it keeps building until edited)."""
+    if os.path.exists(AUTO_FILE) or not os.path.isdir(ESPHOME_DIR):
+        return
+    devices = {}
+    if os.path.exists(OLD_AUTO_FILE):
+        devices = read_devices(OLD_AUTO_FILE)
+    write_devices(devices)
 
 
 def status():
@@ -289,7 +306,7 @@ def check():
         stray = unmanaged_forwards(post_up, read_devices())
         if stray:
             problems.append("post_up forwards to " + ", ".join(stray) + ", which aren't in "
-                            "auto-wireguard-secrets.yaml yet: press Adopt (or add their blocks by hand) "
+                            "wireguard/secrets.yaml yet: press Adopt (or add their blocks by hand) "
                             "first, or provisioning will drop their forwards")
     except Exception as e:
         problems.append(f"Supervisor API: {e}")
@@ -298,7 +315,10 @@ def check():
     if not os.access(ESPHOME_DIR, os.W_OK):
         problems.append(f"can't write to {ESPHOME_DIR}")
     inc = secrets_includes_file()
-    if inc is False:
+    if old_include_present():
+        problems.append("secrets.yaml still includes auto-wireguard-secrets.yaml: change that line "
+                        f"to `{INCLUDE_LINE}`, then delete the old file")
+    elif inc is False:
         problems.append(f"secrets.yaml doesn't have the line `{INCLUDE_LINE}` yet")
     elif inc is None:
         problems.append("can't read secrets.yaml")
@@ -337,7 +357,7 @@ def provision(name, home_ip):
     stray = unmanaged_forwards(server.get("post_up"), devices)
     if stray:
         fail("the add-on forwards to " + ", ".join(stray) + ", which aren't in "
-             "auto-wireguard-secrets.yaml yet. Press Adopt (or add their blocks by hand) first, or "
+             "wireguard/secrets.yaml yet. Press Adopt (or add their blocks by hand) first, or "
              "this would drop their forwards.")
 
     # Tunnel address: reuse the peer's if a previous run added it, else the next free one.
