@@ -164,6 +164,17 @@ views:
               <<: !include auto-wireguard-secrets.yaml
               ```
 
+              ESP32s tunnelled by hand before this existed (their keys in `secrets.yaml`,
+              their forwards in the add-on) need adopting once, before the next Provision.
+              It changes nothing in the add-on. The result shows under **Last run**.
+          - type: button
+            name: Adopt existing ESP32s
+            icon: mdi:import
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.wireguard_adopt
+
   # ---------------------------------------------------------------- History
   - title: History
     path: history
