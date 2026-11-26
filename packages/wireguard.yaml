@@ -4,7 +4,7 @@
 #   sensor.wireguard_status         every minute: peers, handshakes, traffic (state: ok | partial | error)
 #   script.wireguard_provision      adds the device typed on the dashboard as a peer, rebuilds the
 #                                   add-on's port forwards, restarts it, and writes the device's
-#                                   secrets to /config/esphome/auto-wireguard-secrets.yaml
+#                                   secrets to /config/esphome/wireguard/secrets.yaml
 #   script.wireguard_adopt          copies ESP32s tunnelled by hand (forwards + secrets.yaml keys)
 #                                   into the generated file; changes nothing in the add-on
 #   script.wireguard_check          checks the script can do that, changes nothing
@@ -159,7 +159,7 @@ script:
   wireguard_adopt:
     alias: WireGuard adopt existing ESP32s
     description: >-
-      Copies ESP32s that were tunnelled by hand into auto-wireguard-secrets.yaml, from the
+      Copies ESP32s that were tunnelled by hand into wireguard/secrets.yaml, from the
       add-on's port forwards and their secrets.yaml keys. Changes nothing in the add-on.
     icon: mdi:import
     mode: single
